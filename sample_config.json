@@ -3,7 +3,7 @@
       {"name": "<some_schema_name>",
        "table": "`<project>.<dataset>.<table>`",
        "columns": ["<col_name_0>", "<col_name_1>", "<col_name_2>"],
-       "datetime_key": "<your_key>",
+       "datetime_key": "<your_key>", // optional
        "filters": ["country='us'", "state='CA'",
                    "registered_on>=DATE_ADD(current_date, INTERVAL -7 day)"
                   ] // also optional: these are parsed in 'WHERE' clause

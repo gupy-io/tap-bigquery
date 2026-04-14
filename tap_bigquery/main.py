@@ -15,7 +15,7 @@ from . import sync_bigquery as source
 from . import utils
 
 
-REQUIRED_CONFIG_KEYS = ["streams", "start_datetime"]
+REQUIRED_CONFIG_KEYS = ["streams"]
 
 
 LOGGER = utils.get_logger(__name__)
@@ -165,10 +165,6 @@ def main():
         CONFIG["end_datetime"]  = datetime.datetime.utcnow().isoformat()
 
     singer_utils.check_config(CONFIG, REQUIRED_CONFIG_KEYS)
-
-    if not CONFIG.get("start_datetime") and not CONFIG.get("state"):
-        LOGGER.error("state or start_datetime must be specified")
-        return
 
     # If discover flag was passed, run discovery mode and dump output to stdout
     if args.discover:

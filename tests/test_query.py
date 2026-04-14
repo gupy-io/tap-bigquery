@@ -52,3 +52,14 @@ def test_filters():
         " WHERE 1=1 AND DATE_ADD(created_at, INTERVAL -7 DAY)" +
         " AND state='CA' ORDER BY created_at LIMIT 10")
     assert query == expected
+
+
+def test_no_datetime_key():
+    keys = {
+        "table": "test.test.table",
+        "columns": ["col0", "col1", "col2"],
+        "datetime_key": None
+    }
+    query = build_query(keys)
+    expected = "SELECT col0,col1,col2 FROM test.test.table WHERE 1=1"
+    assert query == expected

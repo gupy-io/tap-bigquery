@@ -43,8 +43,9 @@ def get_bigquery_client():
 
 def _build_query(keys, filters=[], inclusive_start=True, limit=None):
     columns = ",".join(keys["columns"])
-    if "*" not in columns and keys["datetime_key"] not in columns:
-        columns = columns + "," + keys["datetime_key"]
+    if keys.get("datetime_key"):
+        if "*" not in columns and keys["datetime_key"] not in columns:
+            columns = columns + "," + keys["datetime_key"]
     keys["columns"] = columns
 
     query = "SELECT {columns} FROM {table} WHERE 1=1".format(**keys)
@@ -80,8 +81,10 @@ def do_discover(config, stream, output_schema_file=None,
                 add_timestamp=True):
     client = get_bigquery_client()
 
-    start_datetime = dateutil.parser.parse(
-        config.get("start_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    start_datetime = None
+    if config.get("start_datetime"):
+        start_datetime = dateutil.parser.parse(
+            config.get("start_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
 
     end_datetime = None
     if config.get("end_datetime"):
@@ -90,7 +93,7 @@ def do_discover(config, stream, output_schema_file=None,
 
     keys = {"table": stream["table"],
             "columns": stream["columns"],
-            "datetime_key": stream["datetime_key"],
+            "datetime_key": stream.get("datetime_key"),
             "start_datetime": start_datetime,
             "end_datetime": end_datetime
             }
@@ -133,7 +136,7 @@ def do_discover(config, stream, output_schema_file=None,
             "table": stream["table"],
             "columns": stream["columns"],
             "filters": stream.get("filters", []),
-            "datetime_key": stream["datetime_key"]
+            "datetime_key": stream.get("datetime_key")
             # "inclusion": "available",
             # "table-key-properties": ["id"],
             # "valid-replication-keys": ["date_modified"],
@@ -163,20 +166,27 @@ def do_sync(config, state, stream):
     metadata = stream.metadata[0]["metadata"]
     tap_stream_id = stream.tap_stream_id
 
-    inclusive_start = True
-    start_datetime = singer.get_bookmark(state, tap_stream_id,
-                                         BOOKMARK_KEY_NAME)
-    if start_datetime:
-        if not config.get("start_always_inclusive"):
-            inclusive_start = False
-    else:
-        start_datetime = config.get("start_datetime")
-    start_datetime = dateutil.parser.parse(start_datetime).strftime(
-            "%Y-%m-%d %H:%M:%S.%f")
+    datetime_key = metadata.get("datetime_key")
 
-    if config.get("end_datetime"):
-        end_datetime = dateutil.parser.parse(
-            config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    if datetime_key:
+        inclusive_start = True
+        start_datetime = singer.get_bookmark(state, tap_stream_id, BOOKMARK_KEY_NAME)
+        if start_datetime:
+            if not config.get("start_always_inclusive"):
+                inclusive_start = False
+        else:
+            start_datetime = config.get("start_datetime")
+        if start_datetime:
+            start_datetime = dateutil.parser.parse(start_datetime).strftime(
+                "%Y-%m-%d %H:%M:%S.%f")
+        end_datetime = None
+        if config.get("end_datetime"):
+            end_datetime = dateutil.parser.parse(
+                config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    else:
+        inclusive_start = True
+        start_datetime = None
+        end_datetime = None
 
     singer.write_schema(tap_stream_id, stream.schema.to_dict(),
                         stream.key_properties)
@@ -194,7 +204,7 @@ def do_sync(config, state, stream):
     query_job = client.query(query)
 
     properties = stream.schema.properties
-    last_update = start_datetime
+    last_update = start_datetime if datetime_key else None
 
     LOGGER.info("Running query:\n    %s" % query)
 
@@ -246,10 +256,12 @@ def do_sync(config, state, stream):
 
             singer.write_record(stream.stream, record)
 
-            last_update = record[keys["datetime_key"]]
+            if keys.get("datetime_key"):
+                last_update = record[keys["datetime_key"]]
             counter.increment()
 
-    state = singer.write_bookmark(state, tap_stream_id, BOOKMARK_KEY_NAME,
-                                  last_update)
+    if keys.get("datetime_key"):
+        state = singer.write_bookmark(state, tap_stream_id, BOOKMARK_KEY_NAME,
+                                      last_update)
 
     singer.write_state(state)
