@@ -53,33 +53,29 @@ def _build_query(keys, filters=[], inclusive_start=True, limit=None):
         for f in filters:
             query = query + " AND " + f
 
+    dt_type = keys.get("datetime_key_type", "datetime").upper()
+    if dt_type == "TIMESTAMP_MICROS":
+        left_side_start = "TIMESTAMP('{start_datetime}')"
+        right_side = "TIMESTAMP_MICROS({datetime_key})"
+        left_side_end = "TIMESTAMP('{end_datetime}')"
+    elif dt_type == "TIMESTAMP_MILLIS":
+        left_side_start = "TIMESTAMP('{start_datetime}')"
+        right_side = "TIMESTAMP_MILLIS({datetime_key})"
+        left_side_end = "TIMESTAMP('{end_datetime}')"
+    else:
+        left_side_start = "datetime '{start_datetime}'"
+        right_side = "CAST({datetime_key} as datetime)"
+        left_side_end = "datetime '{end_datetime}'"
+
     if keys.get("datetime_key") and keys.get("start_datetime"):
-        if keys.get("datetime_key_type", "datetime") == "datetime":
-            if inclusive_start:
-                query = (query +
-                         (" AND datetime '{start_datetime}' <= " +
-                          "CAST({datetime_key} as datetime)").format(**keys))
-            else:
-                query = (query +
-                         (" AND datetime '{start_datetime}' < " +
-                          "CAST({datetime_key} as datetime)").format(**keys))
+        if inclusive_start:
+            query = query + f" AND {left_side_start} <= {right_side}".format(**keys)
         else:
-            if inclusive_start:
-                query = (query +
-                         (" AND {start_datetime} <= {datetime_key}").format(**keys))
-            else:
-                query = (query +
-                         (" AND {start_datetime} < {datetime_key}").format(**keys))
+            query = query + f" AND {left_side_start} < {right_side}".format(**keys)
 
     if keys.get("datetime_key") and keys.get("end_datetime"):
-        if keys.get("datetime_key_type", "datetime") == "datetime":
-            query = (query +
-                     (" AND CAST({datetime_key} as datetime) < " +
-                      "datetime '{end_datetime}'").format(**keys))
-        else:
-            query = (query +
-                     (" AND {datetime_key} < " +
-                      "{end_datetime}").format(**keys))
+        query = query + f" AND {right_side} < {left_side_end}".format(**keys)
+
     if keys.get("datetime_key"):
         query = (query + " ORDER BY {datetime_key}".format(**keys))
 
@@ -95,17 +91,13 @@ def do_discover(config, stream, output_schema_file=None,
 
     datetime_key_type = stream.get("datetime_key_type", "datetime")
 
-    if datetime_key_type == "datetime":
-        start_datetime = dateutil.parser.parse(
-            config.get("start_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    start_datetime = dateutil.parser.parse(
+        config.get("start_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
 
-        end_datetime = None
-        if config.get("end_datetime"):
-            end_datetime = dateutil.parser.parse(
-                config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
-    else:
-        start_datetime = config.get("start_datetime")
-        end_datetime = config.get("end_datetime")
+    end_datetime = None
+    if config.get("end_datetime"):
+        end_datetime = dateutil.parser.parse(
+            config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
 
     keys = {"table": stream["table"],
             "columns": stream["columns"],
@@ -195,16 +187,13 @@ def do_sync(config, state, stream):
         
     datetime_key_type = metadata.get("datetime_key_type", "datetime")
 
-    if datetime_key_type == "datetime":
-        start_datetime = dateutil.parser.parse(start_datetime).strftime(
-                "%Y-%m-%d %H:%M:%S.%f")
+    start_datetime = dateutil.parser.parse(str(start_datetime)).strftime(
+            "%Y-%m-%d %H:%M:%S.%f")
 
-        end_datetime = None
-        if config.get("end_datetime"):
-            end_datetime = dateutil.parser.parse(
-                config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
-    else:
-        end_datetime = config.get("end_datetime")
+    end_datetime = None
+    if config.get("end_datetime"):
+        end_datetime = dateutil.parser.parse(
+            config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
 
     singer.write_schema(tap_stream_id, stream.schema.to_dict(),
                         stream.key_properties)
@@ -275,7 +264,17 @@ def do_sync(config, state, stream):
 
             singer.write_record(stream.stream, record)
 
-            last_update = record[keys["datetime_key"]]
+            val = record[keys["datetime_key"]]
+            dt_type = keys.get("datetime_key_type", "").upper()
+            if dt_type == "TIMESTAMP_MICROS":
+                dt = datetime.datetime.utcfromtimestamp(float(val) / 1000000.0)
+                last_update = dt.isoformat() + "Z"
+            elif dt_type == "TIMESTAMP_MILLIS":
+                dt = datetime.datetime.utcfromtimestamp(float(val) / 1000.0)
+                last_update = dt.isoformat() + "Z"
+            else:
+                last_update = val
+
             counter.increment()
 
     state = singer.write_bookmark(state, tap_stream_id, BOOKMARK_KEY_NAME,

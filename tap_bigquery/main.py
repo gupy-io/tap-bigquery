@@ -129,10 +129,10 @@ def parse_args():
     # Capture additional args
     parser.add_argument(
         "--start_datetime", type=str,
-        help="Inclusive start date time in ISO8601-Date-String format: 2019-04-11T00:00:00Z (or numeric value if datetime_key_type is not datetime)")
+        help="Inclusive start date time in ISO8601-Date-String format: 2019-04-11T00:00:00Z")
     parser.add_argument(
         "--end_datetime", type=str,
-        help="Exclusive end date time in ISO8601-Date-String format: 2019-04-12T00:00:00Z (or numeric value if datetime_key_type is not datetime)")
+        help="Exclusive end date time in ISO8601-Date-String format: 2019-04-12T00:00:00Z")
 
     args = parser.parse_args()
     if args.config:
