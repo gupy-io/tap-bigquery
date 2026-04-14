@@ -54,19 +54,32 @@ def _build_query(keys, filters=[], inclusive_start=True, limit=None):
             query = query + " AND " + f
 
     if keys.get("datetime_key") and keys.get("start_datetime"):
-        if inclusive_start:
-            query = (query +
-                     (" AND datetime '{start_datetime}' <= " +
-                      "CAST({datetime_key} as datetime)").format(**keys))
+        if keys.get("datetime_key_type", "datetime") == "datetime":
+            if inclusive_start:
+                query = (query +
+                         (" AND datetime '{start_datetime}' <= " +
+                          "CAST({datetime_key} as datetime)").format(**keys))
+            else:
+                query = (query +
+                         (" AND datetime '{start_datetime}' < " +
+                          "CAST({datetime_key} as datetime)").format(**keys))
         else:
-            query = (query +
-                     (" AND datetime '{start_datetime}' < " +
-                      "CAST({datetime_key} as datetime)").format(**keys))
+            if inclusive_start:
+                query = (query +
+                         (" AND {start_datetime} <= {datetime_key}").format(**keys))
+            else:
+                query = (query +
+                         (" AND {start_datetime} < {datetime_key}").format(**keys))
 
     if keys.get("datetime_key") and keys.get("end_datetime"):
-        query = (query +
-                 (" AND CAST({datetime_key} as datetime) < " +
-                  "datetime '{end_datetime}'").format(**keys))
+        if keys.get("datetime_key_type", "datetime") == "datetime":
+            query = (query +
+                     (" AND CAST({datetime_key} as datetime) < " +
+                      "datetime '{end_datetime}'").format(**keys))
+        else:
+            query = (query +
+                     (" AND {datetime_key} < " +
+                      "{end_datetime}").format(**keys))
     if keys.get("datetime_key"):
         query = (query + " ORDER BY {datetime_key}".format(**keys))
 
@@ -80,17 +93,24 @@ def do_discover(config, stream, output_schema_file=None,
                 add_timestamp=True):
     client = get_bigquery_client()
 
-    start_datetime = dateutil.parser.parse(
-        config.get("start_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    datetime_key_type = stream.get("datetime_key_type", "datetime")
 
-    end_datetime = None
-    if config.get("end_datetime"):
-        end_datetime = dateutil.parser.parse(
-            config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    if datetime_key_type == "datetime":
+        start_datetime = dateutil.parser.parse(
+            config.get("start_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+
+        end_datetime = None
+        if config.get("end_datetime"):
+            end_datetime = dateutil.parser.parse(
+                config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    else:
+        start_datetime = config.get("start_datetime")
+        end_datetime = config.get("end_datetime")
 
     keys = {"table": stream["table"],
             "columns": stream["columns"],
             "datetime_key": stream["datetime_key"],
+            "datetime_key_type": datetime_key_type,
             "start_datetime": start_datetime,
             "end_datetime": end_datetime
             }
@@ -133,7 +153,8 @@ def do_discover(config, stream, output_schema_file=None,
             "table": stream["table"],
             "columns": stream["columns"],
             "filters": stream.get("filters", []),
-            "datetime_key": stream["datetime_key"]
+            "datetime_key": stream["datetime_key"],
+            "datetime_key_type": datetime_key_type
             # "inclusion": "available",
             # "table-key-properties": ["id"],
             # "valid-replication-keys": ["date_modified"],
@@ -171,12 +192,19 @@ def do_sync(config, state, stream):
             inclusive_start = False
     else:
         start_datetime = config.get("start_datetime")
-    start_datetime = dateutil.parser.parse(start_datetime).strftime(
-            "%Y-%m-%d %H:%M:%S.%f")
+        
+    datetime_key_type = metadata.get("datetime_key_type", "datetime")
 
-    if config.get("end_datetime"):
-        end_datetime = dateutil.parser.parse(
-            config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    if datetime_key_type == "datetime":
+        start_datetime = dateutil.parser.parse(start_datetime).strftime(
+                "%Y-%m-%d %H:%M:%S.%f")
+
+        end_datetime = None
+        if config.get("end_datetime"):
+            end_datetime = dateutil.parser.parse(
+                config.get("end_datetime")).strftime("%Y-%m-%d %H:%M:%S.%f")
+    else:
+        end_datetime = config.get("end_datetime")
 
     singer.write_schema(tap_stream_id, stream.schema.to_dict(),
                         stream.key_properties)
@@ -184,6 +212,7 @@ def do_sync(config, state, stream):
     keys = {"table": metadata["table"],
             "columns": metadata["columns"],
             "datetime_key": metadata.get("datetime_key"),
+            "datetime_key_type": datetime_key_type,
             "start_datetime": start_datetime,
             "end_datetime": end_datetime
             }
